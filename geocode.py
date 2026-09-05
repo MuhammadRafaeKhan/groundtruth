@@ -66,82 +66,211 @@ def explain_flood_zone(zone):
     else:
         return f"Flood zone data for this property is listed as '{zone}'. Consult a flood zone specialist for full details."
 
-def is_high(rating):
-    return rating in ["Relatively High", "Very High"]
+HAZARD_EXPLANATIONS = {
+    "Wildfire": "Reflects this county's likelihood of destructive wildfire activity, based on historical fire data and vegetation conditions.",
+    "Heat Wave": "Reflects how often and how severely this county experiences extreme, prolonged heat events.",
+    "Drought": "Reflects this county's exposure to prolonged water shortages, which can affect property value, landscaping, and water costs.",
+    "Hurricane": "Reflects this county's exposure to hurricane-force winds and related storm damage.",
+    "Tornado": "Reflects the historical frequency and severity of tornado activity recorded in this county."
+}
 
-def build_hazard_text(hazard_data):
-    if not hazard_data:
-        return "Hazard data unavailable for this location."
-    lines = []
-    labels = {
-        "WFIR_RISKR": "Wildfire",
-        "HWAV_RISKR": "Heat Wave",
-        "DRGT_RISKR": "Drought",
-        "HRCN_RISKR": "Hurricane",
-        "TRND_RISKR": "Tornado"
+def risk_score(rating):
+    mapping = {
+        "Very Low": 1,
+        "Relatively Low": 2,
+        "Relatively Moderate": 3,
+        "Relatively High": 4,
+        "Very High": 5,
+        "Not Applicable": 0,
+        "No Rating": 0,
+        "Insufficient Data": 0
     }
-    for key, name in labels.items():
-        rating = hazard_data.get(key, "Unknown")
-        if rating == "Not Applicable":
-            lines.append(f"{name} Risk: Not applicable for this county.")
-        else:
-            lines.append(f"{name} Risk: {rating}")
-    return "\n".join(lines)
+    return mapping.get(rating, 2)
+
+def flood_score(zone):
+    high_risk_zones = ["A", "AE", "AH", "AO", "AR", "A99", "V", "VE"]
+    if zone in high_risk_zones:
+        return 4
+    elif zone == "X":
+        return 1
+    else:
+        return 2
+
+def risk_color(score):
+    if score == 0:
+        return (190, 190, 185)
+    elif score <= 2:
+        return (47, 110, 91)
+    elif score == 3:
+        return (192, 138, 46)
+    else:
+        return (168, 62, 50)
 
 def overall_risk_level(flood_zone, hazard_data):
-    high_flood = flood_zone in ["A", "AE", "AH", "AO", "AR", "A99", "V", "VE"]
-    high_count = 0
+    scores = [flood_score(flood_zone)]
     if hazard_data:
         for key in ["WFIR_RISKR", "HWAV_RISKR", "DRGT_RISKR", "HRCN_RISKR", "TRND_RISKR"]:
-            if is_high(hazard_data.get(key, "")):
-                high_count += 1
-    if high_flood and high_count >= 1:
+            scores.append(risk_score(hazard_data.get(key, "")))
+    high_count = sum(1 for s in scores if s >= 4)
+    if high_count >= 2:
         return "High"
-    elif high_flood or high_count >= 1:
+    elif high_count == 1:
         return "Medium"
     else:
         return "Low"
 
+def draw_risk_row(pdf, label, rating_text, score, y):
+    left_margin = 15
+    pdf.set_xy(left_margin, y)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.set_text_color(30, 40, 35)
+    pdf.cell(42, 7, label)
+
+    bar_x = left_margin + 44
+    bar_width = 85
+    bar_height = 6
+
+    pdf.set_fill_color(230, 230, 224)
+    pdf.rect(bar_x, y + 1, bar_width, bar_height, 'F')
+
+    r, g, b = risk_color(score)
+    fill_width = max(bar_width * (score / 5), 3) if score > 0 else 3
+    pdf.set_fill_color(r, g, b)
+    pdf.rect(bar_x, y + 1, fill_width, bar_height, 'F')
+
+    pdf.set_xy(bar_x + bar_width + 5, y)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(75, 90, 82)
+    pdf.cell(45, 7, rating_text)
+
+def draw_legend(pdf, y):
+    left_margin = 15
+    labels = ["Very Low", "Low", "Moderate", "High", "Very High"]
+    colors = [risk_color(1), risk_color(1), risk_color(3), risk_color(4), risk_color(5)]
+    box_w = 34
+    pdf.set_font("Helvetica", "", 8)
+    for i, (label, color) in enumerate(zip(labels, colors)):
+        x = left_margin + (i * box_w)
+        r, g, b = color
+        pdf.set_fill_color(r, g, b)
+        pdf.rect(x, y, box_w - 2, 4, 'F')
+        pdf.set_xy(x, y + 5)
+        pdf.set_text_color(75, 90, 82)
+        pdf.cell(box_w - 2, 4, label, align="C")
+
 def generate_report(address_data, flood_data, hazard_data, agent_name, agent_contact, output_filename):
     overall = overall_risk_level(flood_data["zone"], hazard_data)
-    flood_text = explain_flood_zone(flood_data["zone"])
-    hazard_text = build_hazard_text(hazard_data)
+    overall_colors = {"Low": (47, 110, 91), "Medium": (192, 138, 46), "High": (168, 62, 50)}
 
     pdf = FPDF()
     pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
 
+    pdf.set_fill_color(30, 42, 36)
+    pdf.rect(0, 0, 210, 30, 'F')
+    pdf.set_xy(15, 9)
+    pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 18)
-    pdf.cell(0, 12, "Property Climate Risk Report", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 10, "GroundTruth")
+    pdf.set_xy(15, 19)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, "Property Climate Risk Report")
 
+    y = 42
+    pdf.set_text_color(30, 40, 35)
+    pdf.set_xy(15, y)
     pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 8, f"Prepared by: {agent_name}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 8, f"Contact: {agent_contact}", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(5)
+    pdf.cell(0, 6, f"Prepared by {agent_name}  |  {agent_contact}")
+    y += 10
 
+    pdf.set_xy(15, y)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 6, "Property Address")
+    y += 7
+    pdf.set_xy(15, y)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.multi_cell(180, 6, address_data["matched_address"])
+    y = pdf.get_y() + 6
+
+    r, g, b = overall_colors[overall]
+    pdf.set_fill_color(r, g, b)
+    pdf.rect(15, y, 55, 16, 'F')
+    pdf.set_xy(15, y + 4)
+    pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 10, "Property Address", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 11)
-    pdf.multi_cell(0, 8, address_data["matched_address"])
-    pdf.ln(3)
+    pdf.cell(55, 8, f"{overall} Risk", align="C")
+    pdf.set_text_color(30, 40, 35)
+    y += 26
 
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, f"Overall Risk Level: {overall}", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(3)
-
+    pdf.set_xy(15, y)
     pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 10, "Flood Risk", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 11)
-    pdf.multi_cell(0, 8, flood_text)
-    pdf.ln(3)
+    pdf.cell(0, 7, "Risk Index")
+    y += 9
 
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 10, "Other Hazard Risks (County-Level, FEMA National Risk Index)", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 11)
-    pdf.multi_cell(0, 8, hazard_text)
-    pdf.ln(5)
+    draw_legend(pdf, y)
+    y += 13
 
-    pdf.set_font("Helvetica", "I", 9)
-    pdf.multi_cell(0, 6, "Disclaimer: This report is for informational purposes only and is not a substitute for a professional inspection, insurance consultation, or official flood determination. Flood data sourced from FEMA NFHL. Other hazard data sourced from FEMA's National Risk Index at the county level.")
+    draw_risk_row(pdf, "Flood", flood_data["zone"], flood_score(flood_data["zone"]), y)
+    y += 11
+
+    hazard_scores = {}
+    if hazard_data:
+        labels = {
+            "WFIR_RISKR": "Wildfire",
+            "HWAV_RISKR": "Heat Wave",
+            "DRGT_RISKR": "Drought",
+            "HRCN_RISKR": "Hurricane",
+            "TRND_RISKR": "Tornado"
+        }
+        for key, name in labels.items():
+            rating = hazard_data.get(key, "Unknown")
+            score = risk_score(rating)
+            hazard_scores[name] = rating
+            display_text = "N/A" if rating == "Not Applicable" else rating
+            draw_risk_row(pdf, name, display_text, score, y)
+            y += 11
+    else:
+        pdf.set_xy(15, y)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 6, "County-level hazard data unavailable for this location.")
+        y += 11
+
+    y += 6
+    pdf.set_xy(15, y)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 6, "What this means")
+    y += 8
+
+    pdf.set_xy(15, y)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_text_color(30, 40, 35)
+    pdf.cell(0, 5, "Flood")
+    y += 5
+    pdf.set_xy(15, y)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(75, 90, 82)
+    pdf.multi_cell(180, 5, explain_flood_zone(flood_data["zone"]))
+    y = pdf.get_y() + 4
+
+    for name, rating in hazard_scores.items():
+        if y > 255:
+            pdf.add_page()
+            y = 20
+        pdf.set_xy(15, y)
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(30, 40, 35)
+        pdf.cell(0, 5, name)
+        y += 5
+        pdf.set_xy(15, y)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(75, 90, 82)
+        pdf.multi_cell(180, 5, HAZARD_EXPLANATIONS.get(name, ""))
+        y = pdf.get_y() + 4
+
+    y += 4
+    pdf.set_xy(15, y)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.multi_cell(180, 5, "Disclaimer: This report is for informational purposes only and is not a substitute for a professional inspection, insurance consultation, or official flood determination. Flood data sourced from FEMA NFHL. Other hazard data sourced from FEMA's National Risk Index at the county level.")
 
     pdf.output(output_filename)
     print(f"Report saved as: {output_filename}")
