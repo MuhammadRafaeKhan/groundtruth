@@ -1,8 +1,21 @@
 from fastapi import FastAPI, Form
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from geocode import get_coordinates, get_flood_zone, get_hazard_data, generate_report
 
 app = FastAPI()
+
+FAVICON_SVG = """<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+<rect width="64" height="64" rx="14" fill="#1E2A24"/>
+<g fill="none" stroke="#F3F4F1" stroke-width="3">
+<path d="M14,46 C10,32 20,20 34,18 C48,16 56,26 54,38 C52,50 40,54 28,52 C18,50 16,54 14,46 Z"/>
+<path d="M22,42 C20,32 28,24 36,23 C44,22 48,30 46,38 C44,46 34,48 28,46 C22,44 23,46 22,42 Z" opacity="0.75"/>
+</g>
+<circle cx="33" cy="34" r="4" fill="#A83E32"/>
+</svg>"""
+
+@app.get("/favicon.svg")
+def favicon():
+    return Response(content=FAVICON_SVG, media_type="image/svg+xml")
 
 @app.get("/", response_class=HTMLResponse)
 def home():
@@ -13,6 +26,7 @@ def home():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GroundTruth — Property Climate Risk Reports</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
