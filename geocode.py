@@ -61,7 +61,7 @@ def get_hazard_data(lat, lon):
         "geometryType": "esriGeometryPoint",
         "inSR": "4326",
         "spatialRel": "esriSpatialRelIntersects",
-        "outFields": "COUNTY,STATE,WFIR_RISKR,HWAV_RISKR,DRGT_RISKR,HRCN_RISKR,TRND_RISKR",
+        "outFields": "COUNTY,STATE,STCOFIPS,WFIR_RISKR,WFIR_RISKS,HWAV_RISKR,HWAV_RISKS,DRGT_RISKR,DRGT_RISKS,HRCN_RISKR,HRCN_RISKS,TRND_RISKR,TRND_RISKS,RISK_SCORE",
         "returnGeometry": "false",
         "f": "json"
     }
@@ -83,6 +83,40 @@ def get_map_image(lat, lon, output_path):
     except Exception:
         return None
 
+def get_disaster_history(stcofips, incident_type="Flood", since_year=2000):
+    if not stcofips or len(stcofips) < 5:
+        return None
+    state_fips = stcofips[:2]
+    county_fips = stcofips[2:]
+    url = "https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries"
+    filter_str = (
+        f"fipsStateCode eq '{state_fips}' and fipsCountyCode eq '{county_fips}' "
+        f"and incidentType eq '{incident_type}' "
+        f"and declarationDate ge '{since_year}-01-01T00:00:00.000Z'"
+    )
+    params = {
+        "$filter": filter_str,
+        "$select": "disasterNumber,declarationTitle,incidentBeginDate,declarationDate",
+        "$orderby": "declarationDate desc",
+        "$format": "json"
+    }
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        records = data.get("DisasterDeclarationsSummaries", [])
+        seen = set()
+        events = []
+        for r in records:
+            num = r.get("disasterNumber")
+            if num in seen:
+                continue
+            seen.add(num)
+            year = r.get("declarationDate", "")[:4]
+            events.append({"year": year, "title": r.get("declarationTitle", "").title()})
+        return events
+    except Exception:
+        return None
+
 def get_state_abbrev(matched_address):
     parts = matched_address.split(",")
     if len(parts) >= 2:
@@ -93,6 +127,27 @@ def get_insurance_estimate(matched_address):
     state = get_state_abbrev(matched_address)
     avg = STATE_NFIP_AVERAGES.get(state, NATIONAL_NFIP_AVERAGE)
     return {"state": state, "average_annual": avg}
+
+def get_highest_percentile(hazard_data):
+    if not hazard_data:
+        return None
+    score_fields = {
+        "Wildfire": "WFIR_RISKS",
+        "Heat Wave": "HWAV_RISKS",
+        "Drought": "DRGT_RISKS",
+        "Hurricane": "HRCN_RISKS",
+        "Tornado": "TRND_RISKS"
+    }
+    best = None
+    for name, field in score_fields.items():
+        val = hazard_data.get(field)
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            continue
+        if best is None or val > best[1]:
+            best = (name, val)
+    return best
 
 def explain_flood_zone(zone):
     high_risk_zones = ["A", "AE", "AH", "AO", "AR", "A99", "V", "VE"]
@@ -194,6 +249,9 @@ def generate_report(address_data, flood_data, hazard_data, agent_name, agent_con
     overall = overall_risk_level(flood_data["zone"], hazard_data)
     overall_colors = {"Low": (47, 110, 91), "Medium": (192, 138, 46), "High": (168, 62, 50)}
     insurance = get_insurance_estimate(address_data["matched_address"])
+    stcofips = hazard_data.get("STCOFIPS", "") if hazard_data else ""
+    disaster_history = get_disaster_history(stcofips)
+    top_percentile = get_highest_percentile(hazard_data)
 
     pdf = FPDF()
     pdf.add_page()
@@ -246,10 +304,19 @@ def generate_report(address_data, flood_data, hazard_data, agent_name, agent_con
     pdf.set_font("Helvetica", "B", 13)
     pdf.cell(55, 8, f"{overall} Risk", align="C")
     pdf.set_text_color(30, 40, 35)
+
+    if top_percentile:
+        name, pct = top_percentile
+        pdf.set_xy(75, y + 2)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(75, 90, 82)
+        pdf.multi_cell(120, 5, f"{name} risk here ranks higher than {pct:.0f}% of US counties (FEMA National Risk Index).")
+
     y += 26
 
     pdf.set_xy(15, y)
     pdf.set_font("Helvetica", "B", 13)
+    pdf.set_text_color(30, 40, 35)
     pdf.cell(0, 7, "Risk Index")
     y += 9
 
@@ -299,7 +366,47 @@ def generate_report(address_data, flood_data, hazard_data, agent_name, agent_con
     pdf.multi_cell(120, 4.5, "Average annual NFIP payment across all policies in this state (FEMA, July 2026). Not a quote for this specific property - actual cost depends on coverage amount, elevation, and foundation type.")
     y += 40
 
-    if y > 240:
+    if y > 235:
+        pdf.add_page()
+        y = 20
+
+    county_name = hazard_data.get("COUNTY", "this county") if hazard_data else "this county"
+    box_height = 24
+    if disaster_history:
+        box_height = 24 + (min(len(disaster_history), 4) * 5)
+
+    pdf.set_fill_color(240, 240, 235)
+    pdf.rect(15, y, 180, box_height, 'F')
+    pdf.set_xy(20, y + 4)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_text_color(30, 40, 35)
+    pdf.cell(0, 6, f"Flood history: {county_name} County, FEMA declarations since 2000")
+    inner_y = y + 12
+    if disaster_history is None:
+        pdf.set_xy(20, inner_y)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(75, 90, 82)
+        pdf.cell(0, 5, "Historical disaster data temporarily unavailable.")
+    elif len(disaster_history) == 0:
+        pdf.set_xy(20, inner_y)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(75, 90, 82)
+        pdf.cell(0, 5, "No FEMA-declared flood disasters recorded for this county since 2000.")
+    else:
+        pdf.set_xy(20, inner_y)
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(47, 110, 91)
+        pdf.cell(0, 5, f"{len(disaster_history)} FEMA-declared flood disaster(s) since 2000")
+        inner_y += 6
+        for event in disaster_history[:4]:
+            pdf.set_xy(20, inner_y)
+            pdf.set_font("Helvetica", "", 9)
+            pdf.set_text_color(75, 90, 82)
+            pdf.cell(0, 5, f"{event['year']} - {event['title']}")
+            inner_y += 5
+    y += box_height + 8
+
+    if y > 235:
         pdf.add_page()
         y = 20
 
@@ -338,7 +445,7 @@ def generate_report(address_data, flood_data, hazard_data, agent_name, agent_con
     y += 4
     pdf.set_xy(15, y)
     pdf.set_font("Helvetica", "I", 8)
-    pdf.multi_cell(180, 5, "Disclaimer: This report is for informational purposes only and is not a substitute for a professional inspection, insurance consultation, or official flood determination. Flood data sourced from FEMA NFHL. Other hazard data sourced from FEMA's National Risk Index at the county level. Insurance figures are state averages calculated from FEMA NFIP policy data (July 2026 snapshot), not individualized quotes.")
+    pdf.multi_cell(180, 5, "Disclaimer: This report is for informational purposes only and is not a substitute for a professional inspection, insurance consultation, or official flood determination. Flood data sourced from FEMA NFHL. Other hazard data and national percentile rankings sourced from FEMA's National Risk Index at the county level. Insurance figures are state averages from FEMA NFIP policy data (July 2026). Flood history sourced from FEMA's OpenFEMA Disaster Declarations database.")
 
     pdf.output(output_filename)
     print(f"Report saved as: {output_filename}")
