@@ -1,5 +1,20 @@
 import requests
+import os
 from fpdf import FPDF
+from staticmap import StaticMap, CircleMarker
+
+STATE_NFIP_AVERAGES = {
+    "WV": 2260, "VT": 2126, "PA": 1895, "CT": 1874, "MO": 1837, "KY": 1811,
+    "ME": 1770, "IA": 1694, "TN": 1553, "NH": 1537, "SD": 1536, "MA": 1536,
+    "NY": 1522, "MS": 1517, "NM": 1488, "MN": 1431, "RI": 1412, "NJ": 1406,
+    "OH": 1396, "OK": 1387, "AR": 1372, "KS": 1352, "WA": 1319, "IL": 1305,
+    "LA": 1292, "CA": 1291, "IN": 1289, "ID": 1282, "NE": 1280, "WY": 1270,
+    "CO": 1253, "OR": 1248, "WI": 1244, "TX": 1234, "MT": 1219, "AL": 1185,
+    "NC": 1179, "NV": 1175, "FL": 1169, "GA": 1134, "AZ": 1110, "ND": 1104,
+    "DE": 1093, "MI": 1077, "HI": 987, "VA": 977, "SC": 973, "UT": 882,
+    "MD": 653, "AK": 588
+}
+NATIONAL_NFIP_AVERAGE = 1233
 
 def get_coordinates(address):
     url = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
@@ -57,6 +72,28 @@ def get_hazard_data(lat, lon):
         return None
     return features[0]["attributes"]
 
+def get_map_image(lat, lon, output_path):
+    try:
+        m = StaticMap(500, 300, url_template='https://a.tile.openstreetmap.org/{z}/{x}/{y}.png')
+        marker = CircleMarker((lon, lat), '#A83E32', 14)
+        m.add_marker(marker)
+        image = m.render(zoom=15)
+        image.save(output_path)
+        return output_path
+    except Exception:
+        return None
+
+def get_state_abbrev(matched_address):
+    parts = matched_address.split(",")
+    if len(parts) >= 2:
+        return parts[-2].strip()
+    return ""
+
+def get_insurance_estimate(matched_address):
+    state = get_state_abbrev(matched_address)
+    avg = STATE_NFIP_AVERAGES.get(state, NATIONAL_NFIP_AVERAGE)
+    return {"state": state, "average_annual": avg}
+
 def explain_flood_zone(zone):
     high_risk_zones = ["A", "AE", "AH", "AO", "AR", "A99", "V", "VE"]
     if zone in high_risk_zones:
@@ -76,14 +113,9 @@ HAZARD_EXPLANATIONS = {
 
 def risk_score(rating):
     mapping = {
-        "Very Low": 1,
-        "Relatively Low": 2,
-        "Relatively Moderate": 3,
-        "Relatively High": 4,
-        "Very High": 5,
-        "Not Applicable": 0,
-        "No Rating": 0,
-        "Insufficient Data": 0
+        "Very Low": 1, "Relatively Low": 2, "Relatively Moderate": 3,
+        "Relatively High": 4, "Very High": 5, "Not Applicable": 0,
+        "No Rating": 0, "Insufficient Data": 0
     }
     return mapping.get(rating, 2)
 
@@ -158,9 +190,10 @@ def draw_legend(pdf, y):
         pdf.set_text_color(75, 90, 82)
         pdf.cell(box_w - 2, 4, label, align="C")
 
-def generate_report(address_data, flood_data, hazard_data, agent_name, agent_contact, output_filename, logo_path=None):
+def generate_report(address_data, flood_data, hazard_data, agent_name, agent_contact, output_filename, logo_path=None, map_path=None):
     overall = overall_risk_level(flood_data["zone"], hazard_data)
     overall_colors = {"Low": (47, 110, 91), "Medium": (192, 138, 46), "High": (168, 62, 50)}
+    insurance = get_insurance_estimate(address_data["matched_address"])
 
     pdf = FPDF()
     pdf.add_page()
@@ -198,6 +231,13 @@ def generate_report(address_data, flood_data, hazard_data, agent_name, agent_con
     pdf.multi_cell(180, 6, address_data["matched_address"])
     y = pdf.get_y() + 6
 
+    if map_path:
+        try:
+            pdf.image(map_path, x=15, y=y, w=180, h=55)
+            y += 61
+        except Exception:
+            pass
+
     r, g, b = overall_colors[overall]
     pdf.set_fill_color(r, g, b)
     pdf.rect(15, y, 55, 16, 'F')
@@ -222,11 +262,8 @@ def generate_report(address_data, flood_data, hazard_data, agent_name, agent_con
     hazard_scores = {}
     if hazard_data:
         labels = {
-            "WFIR_RISKR": "Wildfire",
-            "HWAV_RISKR": "Heat Wave",
-            "DRGT_RISKR": "Drought",
-            "HRCN_RISKR": "Hurricane",
-            "TRND_RISKR": "Tornado"
+            "WFIR_RISKR": "Wildfire", "HWAV_RISKR": "Heat Wave", "DRGT_RISKR": "Drought",
+            "HRCN_RISKR": "Hurricane", "TRND_RISKR": "Tornado"
         }
         for key, name in labels.items():
             rating = hazard_data.get(key, "Unknown")
@@ -241,9 +278,34 @@ def generate_report(address_data, flood_data, hazard_data, agent_name, agent_con
         pdf.cell(0, 6, "County-level hazard data unavailable for this location.")
         y += 11
 
-    y += 6
+    if y > 240:
+        pdf.add_page()
+        y = 20
+
+    y += 8
+    pdf.set_fill_color(240, 240, 235)
+    pdf.rect(15, y, 180, 34, 'F')
+    pdf.set_xy(20, y + 4)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_text_color(30, 40, 35)
+    pdf.cell(0, 6, f"Flood insurance context: {insurance['state']} state average")
+    pdf.set_xy(20, y + 13)
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_text_color(47, 110, 91)
+    pdf.cell(0, 8, f"${insurance['average_annual']:,} / year")
+    pdf.set_xy(70, y + 13)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(75, 90, 82)
+    pdf.multi_cell(120, 4.5, "Average annual NFIP payment across all policies in this state (FEMA, July 2026). Not a quote for this specific property - actual cost depends on coverage amount, elevation, and foundation type.")
+    y += 40
+
+    if y > 240:
+        pdf.add_page()
+        y = 20
+
     pdf.set_xy(15, y)
     pdf.set_font("Helvetica", "B", 12)
+    pdf.set_text_color(30, 40, 35)
     pdf.cell(0, 6, "What this means")
     y += 8
 
@@ -276,7 +338,7 @@ def generate_report(address_data, flood_data, hazard_data, agent_name, agent_con
     y += 4
     pdf.set_xy(15, y)
     pdf.set_font("Helvetica", "I", 8)
-    pdf.multi_cell(180, 5, "Disclaimer: This report is for informational purposes only and is not a substitute for a professional inspection, insurance consultation, or official flood determination. Flood data sourced from FEMA NFHL. Other hazard data sourced from FEMA's National Risk Index at the county level.")
+    pdf.multi_cell(180, 5, "Disclaimer: This report is for informational purposes only and is not a substitute for a professional inspection, insurance consultation, or official flood determination. Flood data sourced from FEMA NFHL. Other hazard data sourced from FEMA's National Risk Index at the county level. Insurance figures are state averages calculated from FEMA NFIP policy data (July 2026 snapshot), not individualized quotes.")
 
     pdf.output(output_filename)
     print(f"Report saved as: {output_filename}")
@@ -290,6 +352,9 @@ if __name__ == "__main__":
     if result:
         flood = get_flood_zone(result["latitude"], result["longitude"])
         hazard = get_hazard_data(result["latitude"], result["longitude"])
-        generate_report(result, flood, hazard, agent_name, agent_contact, "risk_report.pdf")
+        map_path = get_map_image(result["latitude"], result["longitude"], "map_temp.png")
+        generate_report(result, flood, hazard, agent_name, agent_contact, "risk_report.pdf", map_path=map_path)
+        if map_path and os.path.exists(map_path):
+            os.remove(map_path)
     else:
         print("Could not find that address.")
