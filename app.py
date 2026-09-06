@@ -2,7 +2,7 @@ import os
 import tempfile
 from fastapi import FastAPI, Form, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse, Response
-from geocode import get_coordinates, get_flood_zone, get_hazard_data, generate_report
+from geocode import get_coordinates, get_flood_zone, get_hazard_data, generate_report, get_map_image
 
 app = FastAPI()
 
@@ -43,6 +43,7 @@ def home():
     --card: #FFFFFF;
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   body {
     margin: 0;
     background: var(--paper);
@@ -57,14 +58,56 @@ def home():
     margin: 0;
   }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px; }
-  header { padding: 28px 0 0; }
+
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(243, 244, 241, 0.9);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  }
+  header.scrolled {
+    border-bottom: 1px solid var(--line);
+    box-shadow: 0 2px 12px rgba(30, 42, 36, 0.04);
+  }
+  header .wrap {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 18px;
+    padding-bottom: 18px;
+  }
   .wordmark {
     font-family: 'Fraunces', serif;
     font-size: 20px;
     font-weight: 600;
     letter-spacing: 0.2px;
+    text-decoration: none;
+    color: var(--ink);
   }
   .wordmark span { color: var(--teal); }
+  nav a {
+    position: relative;
+    color: var(--ink-soft);
+    text-decoration: none;
+    font-size: 14px;
+    padding-bottom: 3px;
+  }
+  nav a::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 0%;
+    height: 1px;
+    background: var(--teal);
+    transition: width 0.2s ease;
+  }
+  nav a:hover { color: var(--teal); }
+  nav a:hover::after { width: 100%; }
+
   .hero {
     display: grid;
     grid-template-columns: 1.1fr 0.9fr;
@@ -72,6 +115,18 @@ def home():
     align-items: center;
     padding: 56px 0 72px;
   }
+  .fade-up {
+    opacity: 0;
+    transform: translateY(14px);
+    animation: fadeUp 0.6s ease forwards;
+  }
+  .fade-up.d1 { animation-delay: 0.05s; }
+  .fade-up.d2 { animation-delay: 0.15s; }
+  .fade-up.d3 { animation-delay: 0.25s; }
+  @keyframes fadeUp {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
   .hero h1 { font-size: 42px; max-width: 480px; }
   .hero p.lede {
     max-width: 440px;
@@ -85,6 +140,11 @@ def home():
     border-radius: 10px;
     padding: 28px;
     margin-top: 32px;
+    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+  }
+  .card:hover {
+    box-shadow: 0 8px 28px rgba(30, 42, 36, 0.07);
+    border-color: #c9cec6;
   }
   .field { margin-bottom: 16px; }
   label {
@@ -102,7 +162,9 @@ def home():
     font-size: 15px;
     color: var(--ink);
     background: var(--paper);
+    transition: border-color 0.15s ease, background 0.15s ease;
   }
+  input[type="text"]:hover { border-color: #c9cec6; }
   input[type="file"] {
     width: 100%;
     padding: 9px 0;
@@ -123,19 +185,30 @@ def home():
     font-weight: 500;
     cursor: pointer;
     margin-top: 4px;
-    transition: background 0.15s ease;
+    transition: background 0.15s ease, transform 0.1s ease;
   }
-  button[type="submit"]:hover { background: #275c4c; }
-  button[type="submit"]:disabled { background: var(--ink-soft); cursor: wait; }
+  button[type="submit"]:hover { background: #275c4c; transform: translateY(-1px); }
+  button[type="submit"]:active { transform: translateY(0); }
+  button[type="submit"]:disabled { background: var(--ink-soft); cursor: wait; transform: none; }
+
   .status {
     margin-top: 12px;
     font-size: 14px;
     color: var(--ink-soft);
     display: none;
   }
-  .status.visible { display: block; }
+  .status.visible { display: block; animation: fadeUp 0.3s ease forwards; }
   .status.error { color: var(--brick); }
+
   .contour { width: 100%; height: auto; }
+
+  .reveal {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  .reveal.in-view { opacity: 1; transform: translateY(0); }
+
   .steps {
     border-top: 1px solid var(--line);
     padding: 56px 0;
@@ -154,6 +227,7 @@ def home():
   }
   .step h2 { font-size: 19px; }
   .step p { color: var(--ink-soft); font-size: 15px; margin-top: 8px; }
+
   .sources {
     border-top: 1px solid var(--line);
     padding: 40px 0;
@@ -161,12 +235,15 @@ def home():
     font-size: 14px;
   }
   .sources strong { color: var(--ink); }
+  .sources a { color: var(--teal); }
+
   footer {
     border-top: 1px solid var(--line);
     padding: 28px 0 40px;
     color: var(--ink-soft);
     font-size: 13px;
   }
+
   @media (max-width: 800px) {
     .hero { grid-template-columns: 1fr; }
     .steps { grid-template-columns: 1fr; }
@@ -175,19 +252,20 @@ def home():
 </style>
 </head>
 <body>
-<header>
+<header id="siteHeader">
   <div class="wrap">
-    <div class="wordmark">Ground<span>Truth</span></div>
+    <a href="/" class="wordmark">Ground<span>Truth</span></a>
+    <nav><a href="/methodology">Methodology</a></nav>
   </div>
 </header>
 
 <div class="wrap">
   <section class="hero">
     <div>
-      <h1>Show every buyer the ground truth before they sign.</h1>
-      <p class="lede">Enter a property address and get a branded flood, wildfire, and climate risk report — built on FEMA data, ready in under a minute.</p>
+      <h1 class="fade-up d1">Show every buyer the ground truth before they sign.</h1>
+      <p class="lede fade-up d2">Enter a property address and get a branded flood, wildfire, and climate risk report — built on FEMA data, ready in under a minute.</p>
 
-      <div class="card">
+      <div class="card fade-up d3">
         <form id="reportForm">
           <div class="field">
             <label for="address">Property address</label>
@@ -211,7 +289,7 @@ def home():
       </div>
     </div>
 
-    <div>
+    <div class="fade-up d2">
       <svg class="contour" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
         <g fill="none" stroke="#2F6E5B" stroke-width="1.2" opacity="0.5">
           <path d="M60,340 C40,260 90,180 180,160 C270,140 340,190 350,270 C358,340 300,380 220,370 C140,362 80,400 60,340 Z"/>
@@ -224,7 +302,7 @@ def home():
     </div>
   </section>
 
-  <section class="steps">
+  <section class="steps reveal">
     <div class="step">
       <span class="num">1</span>
       <h2>Enter the address</h2>
@@ -242,8 +320,8 @@ def home():
     </div>
   </section>
 
-  <section class="sources">
-    <strong>Where the data comes from.</strong> Flood zone data is pulled directly from FEMA's National Flood Hazard Layer. Wildfire, heat wave, drought, hurricane, and tornado risk come from FEMA's National Risk Index — the same federal data used by insurers and emergency planners nationwide.
+  <section class="sources reveal">
+    <strong>Where the data comes from.</strong> Flood zone data is pulled directly from FEMA's National Flood Hazard Layer. Wildfire, heat wave, drought, hurricane, and tornado risk come from FEMA's National Risk Index. See our full <a href="/methodology">methodology page</a> for exact sources and calculations.
   </section>
 </div>
 
@@ -254,6 +332,26 @@ def home():
 </footer>
 
 <script>
+const header = document.getElementById('siteHeader');
+window.addEventListener('scroll', function () {
+  if (window.scrollY > 8) {
+    header.classList.add('scrolled');
+  } else {
+    header.classList.remove('scrolled');
+  }
+});
+
+const revealEls = document.querySelectorAll('.reveal');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('in-view');
+      observer.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.15 });
+revealEls.forEach(el => observer.observe(el));
+
 document.getElementById('reportForm').addEventListener('submit', async function (e) {
   e.preventDefault();
   const form = e.target;
@@ -295,6 +393,85 @@ document.getElementById('reportForm').addEventListener('submit', async function 
 </html>
     """
 
+@app.get("/methodology", response_class=HTMLResponse)
+def methodology():
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Methodology — GroundTruth</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #F3F4F1; --ink: #1E2A24; --ink-soft: #4B5A52; --line: #D8DBD3; --teal: #2F6E5B;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: 'IBM Plex Sans', sans-serif; line-height: 1.6; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 28px 60px; }
+  header { padding: 28px 0; }
+  .wordmark { font-family: 'Fraunces', serif; font-size: 20px; font-weight: 600; text-decoration: none; color: var(--ink); }
+  .wordmark span { color: var(--teal); }
+  h1 { font-family: 'Fraunces', serif; font-size: 34px; font-weight: 500; margin: 20px 0 8px; }
+  .updated { color: var(--ink-soft); font-size: 14px; margin-bottom: 40px; }
+  h2 { font-family: 'Fraunces', serif; font-size: 21px; font-weight: 500; margin: 40px 0 10px; }
+  p { color: var(--ink-soft); font-size: 16px; margin: 0 0 12px; }
+  .source-box {
+    background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    padding: 16px 20px; margin: 14px 0; transition: box-shadow 0.2s ease;
+  }
+  .source-box:hover { box-shadow: 0 6px 20px rgba(30, 42, 36, 0.06); }
+  .source-box strong { color: var(--ink); }
+  a { color: var(--teal); }
+  .back { display: inline-block; margin-top: 40px; color: var(--teal); text-decoration: none; font-size: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a href="/" class="wordmark">Ground<span>Truth</span></a>
+  </div>
+</header>
+<div class="wrap">
+  <h1>Methodology</h1>
+  <p class="updated">How every number in a GroundTruth report is sourced and calculated.</p>
+
+  <h2>Flood zone</h2>
+  <div class="source-box">
+    <strong>Source:</strong> FEMA National Flood Hazard Layer (NFHL)<br>
+    We query FEMA's live flood hazard database for the exact coordinates of the address entered. The zone returned (such as X, A, or AE) is FEMA's official flood designation for that specific point.
+  </div>
+
+  <h2>Wildfire, heat wave, drought, hurricane, and tornado risk</h2>
+  <div class="source-box">
+    <strong>Source:</strong> FEMA National Risk Index (county level)<br>
+    Each rating (Very Low through Very High) and each national percentile score reflects the entire county the address falls in, not the individual property. This is the same dataset FEMA publishes for emergency planners and researchers nationwide.
+  </div>
+
+  <h2>Flood insurance cost context</h2>
+  <div class="source-box">
+    <strong>Source:</strong> FEMA National Flood Insurance Program (NFIP) policy data, July 2026 snapshot<br>
+    The dollar figure shown is the average annual NFIP payment across all existing policies in that state. It is not a personalized quote — actual premiums depend on coverage amount, deductible, elevation, and foundation type, which require an official insurance consultation to determine.
+  </div>
+
+  <h2>Flood disaster history</h2>
+  <div class="source-box">
+    <strong>Source:</strong> FEMA OpenFEMA Disaster Declarations Summary<br>
+    We count federally declared flood disasters for the property's county since 2000, using FEMA's public disaster declarations database, which records every federal disaster declaration since 1953.
+  </div>
+
+  <h2>What this tool does not do</h2>
+  <p>GroundTruth does not perform a property-level inspection, does not replace an official flood determination, and does not issue insurance quotes. All figures are informational and intended to support, not replace, professional advice from a licensed inspector, insurance agent, or flood zone specialist.</p>
+
+  <a href="/" class="back">&larr; Back to GroundTruth</a>
+</div>
+</body>
+</html>
+    """
+
 @app.post("/generate")
 def generate(
     address: str = Form(...),
@@ -309,3 +486,21 @@ def generate(
     flood = get_flood_zone(result["latitude"], result["longitude"])
     hazard = get_hazard_data(result["latitude"], result["longitude"])
     filename = "risk_report.pdf"
+
+    logo_path = None
+    if logo is not None and logo.filename:
+        suffix = os.path.splitext(logo.filename)[1] or ".png"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(logo.file.read())
+            logo_path = tmp.name
+
+    map_path = get_map_image(result["latitude"], result["longitude"], tempfile.mktemp(suffix=".png"))
+
+    generate_report(result, flood, hazard, agent_name, agent_contact, filename, logo_path=logo_path, map_path=map_path)
+
+    if logo_path and os.path.exists(logo_path):
+        os.remove(logo_path)
+    if map_path and os.path.exists(map_path):
+        os.remove(map_path)
+
+    return FileResponse(filename, filename="risk_report.pdf", media_type="application/pdf")
