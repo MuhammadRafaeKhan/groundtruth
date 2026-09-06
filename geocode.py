@@ -158,7 +158,7 @@ def draw_legend(pdf, y):
         pdf.set_text_color(75, 90, 82)
         pdf.cell(box_w - 2, 4, label, align="C")
 
-def generate_report(address_data, flood_data, hazard_data, agent_name, agent_contact, output_filename):
+def generate_report(address_data, flood_data, hazard_data, agent_name, agent_contact, output_filename, logo_path=None):
     overall = overall_risk_level(flood_data["zone"], hazard_data)
     overall_colors = {"Low": (47, 110, 91), "Medium": (192, 138, 46), "High": (168, 62, 50)}
 
@@ -175,6 +175,12 @@ def generate_report(address_data, flood_data, hazard_data, agent_name, agent_con
     pdf.set_xy(15, 19)
     pdf.set_font("Helvetica", "", 10)
     pdf.cell(0, 6, "Property Climate Risk Report")
+
+    if logo_path:
+        try:
+            pdf.image(logo_path, x=170, y=6, w=25)
+        except Exception:
+            pass
 
     y = 42
     pdf.set_text_color(30, 40, 35)

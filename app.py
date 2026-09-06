@@ -1,4 +1,6 @@
-from fastapi import FastAPI, Form
+import os
+import tempfile
+from fastapi import FastAPI, Form, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from geocode import get_coordinates, get_flood_zone, get_hazard_data, generate_report
 
@@ -55,9 +57,7 @@ def home():
     margin: 0;
   }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px; }
-  header {
-    padding: 28px 0 0;
-  }
+  header { padding: 28px 0 0; }
   .wordmark {
     font-family: 'Fraunces', serif;
     font-size: 20px;
@@ -65,7 +65,6 @@ def home():
     letter-spacing: 0.2px;
   }
   .wordmark span { color: var(--teal); }
-
   .hero {
     display: grid;
     grid-template-columns: 1.1fr 0.9fr;
@@ -80,7 +79,6 @@ def home():
     font-size: 17px;
     margin-top: 18px;
   }
-
   .card {
     background: var(--card);
     border: 1px solid var(--line);
@@ -95,7 +93,7 @@ def home():
     color: var(--ink-soft);
     margin-bottom: 6px;
   }
-  input {
+  input[type="text"] {
     width: 100%;
     padding: 11px 12px;
     border: 1px solid var(--line);
@@ -105,10 +103,14 @@ def home():
     color: var(--ink);
     background: var(--paper);
   }
-  input:focus {
-    outline: 2px solid var(--teal);
-    outline-offset: 1px;
+  input[type="file"] {
+    width: 100%;
+    padding: 9px 0;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 14px;
+    color: var(--ink-soft);
   }
+  input:focus { outline: 2px solid var(--teal); outline-offset: 1px; }
   button[type="submit"] {
     width: 100%;
     padding: 13px;
@@ -125,7 +127,6 @@ def home():
   }
   button[type="submit"]:hover { background: #275c4c; }
   button[type="submit"]:disabled { background: var(--ink-soft); cursor: wait; }
-
   .status {
     margin-top: 12px;
     font-size: 14px;
@@ -134,12 +135,7 @@ def home():
   }
   .status.visible { display: block; }
   .status.error { color: var(--brick); }
-
-  .contour {
-    width: 100%;
-    height: auto;
-  }
-
+  .contour { width: 100%; height: auto; }
   .steps {
     border-top: 1px solid var(--line);
     padding: 56px 0;
@@ -158,7 +154,6 @@ def home():
   }
   .step h2 { font-size: 19px; }
   .step p { color: var(--ink-soft); font-size: 15px; margin-top: 8px; }
-
   .sources {
     border-top: 1px solid var(--line);
     padding: 40px 0;
@@ -166,14 +161,12 @@ def home():
     font-size: 14px;
   }
   .sources strong { color: var(--ink); }
-
   footer {
     border-top: 1px solid var(--line);
     padding: 28px 0 40px;
     color: var(--ink-soft);
     font-size: 13px;
   }
-
   @media (max-width: 800px) {
     .hero { grid-template-columns: 1fr; }
     .steps { grid-template-columns: 1fr; }
@@ -207,6 +200,10 @@ def home():
           <div class="field">
             <label for="agent_contact">Your contact info</label>
             <input type="text" id="agent_contact" name="agent_contact" placeholder="jane@example.com" required>
+          </div>
+          <div class="field">
+            <label for="logo">Your logo (optional)</label>
+            <input type="file" id="logo" name="logo" accept="image/png, image/jpeg">
           </div>
           <button type="submit">Generate report</button>
           <div class="status" id="status"></div>
@@ -299,7 +296,12 @@ document.getElementById('reportForm').addEventListener('submit', async function 
     """
 
 @app.post("/generate")
-def generate(address: str = Form(...), agent_name: str = Form(...), agent_contact: str = Form(...)):
+def generate(
+    address: str = Form(...),
+    agent_name: str = Form(...),
+    agent_contact: str = Form(...),
+    logo: UploadFile = File(None)
+):
     result = get_coordinates(address)
     if not result:
         return HTMLResponse("<p>Could not find that address. <a href='/'>Try again</a></p>", status_code=400)
@@ -307,6 +309,3 @@ def generate(address: str = Form(...), agent_name: str = Form(...), agent_contac
     flood = get_flood_zone(result["latitude"], result["longitude"])
     hazard = get_hazard_data(result["latitude"], result["longitude"])
     filename = "risk_report.pdf"
-    generate_report(result, flood, hazard, agent_name, agent_contact, filename)
-
-    return FileResponse(filename, filename="risk_report.pdf", media_type="application/pdf")
