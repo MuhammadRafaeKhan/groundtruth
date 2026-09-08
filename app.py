@@ -62,7 +62,7 @@ def home():
   header {
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: 20;
     background: rgba(243, 244, 241, 0.9);
     backdrop-filter: blur(6px);
     border-bottom: 1px solid transparent;
@@ -110,7 +110,7 @@ def home():
 
   .hero {
     display: grid;
-    grid-template-columns: 1.1fr 0.9fr;
+    grid-template-columns: 1fr 1fr;
     gap: 56px;
     align-items: center;
     padding: 56px 0 72px;
@@ -200,7 +200,126 @@ def home():
   .status.visible { display: block; animation: fadeUp 0.3s ease forwards; }
   .status.error { color: var(--brick); }
 
-  .contour { width: 100%; height: auto; }
+  .preview-wrap {
+    position: relative;
+    height: 720px;
+    overflow: hidden;
+  }
+
+  .sample-card {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 340px;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 24px 60px rgba(30, 42, 36, 0.18), 0 6px 16px rgba(30, 42, 36, 0.08);
+    overflow: hidden;
+    animation: floatCard 6s ease-in-out infinite, dropIn 0.7s ease forwards;
+    animation-delay: 0s, 0.3s;
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 20px));
+    z-index: 3;
+  }
+  @keyframes dropIn {
+    to { opacity: 1; transform: translate(-50%, -50%); }
+  }
+  @keyframes floatCard {
+    0%, 100% { margin-top: 0px; }
+    50% { margin-top: -10px; }
+  }
+  .sample-header {
+    background: #1E2A24;
+    color: #fff;
+    padding: 16px 18px;
+    font-family: 'Fraunces', serif;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .sample-body { padding: 18px; }
+  .sample-address {
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin-bottom: 12px;
+  }
+  .sample-badge {
+    display: inline-block;
+    background: var(--brick);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+  }
+  .sample-row { margin-bottom: 11px; display: flex; align-items: center; gap: 8px; }
+  .sample-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .sample-row-inner { flex: 1; }
+  .sample-row-label {
+    font-size: 10.5px;
+    color: var(--ink-soft);
+    margin-bottom: 3px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .sample-bar-track {
+    height: 6px;
+    background: #E6E6E0;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .sample-bar-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 3px;
+    animation: fillBar 1s ease forwards;
+  }
+  .bar1 { background: var(--brick); animation-delay: 0.9s; }
+  .bar2 { background: var(--ochre); animation-delay: 1.0s; }
+  .bar3 { background: var(--brick); animation-delay: 1.1s; }
+  .bar4 { background: var(--teal); animation-delay: 1.2s; }
+  .bar5 { background: var(--teal); animation-delay: 1.3s; }
+  @keyframes fillBar {
+    to { width: var(--fill); }
+  }
+
+  .fact-chip {
+    position: absolute;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 16px;
+    box-shadow: 0 10px 26px rgba(30, 42, 36, 0.08);
+    max-width: 190px;
+    opacity: 0;
+    animation: chipIn 0.6s ease forwards;
+    z-index: 4;
+  }
+  .fact-chip .num {
+    font-family: 'Fraunces', serif;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--teal);
+    display: block;
+  }
+  .fact-chip .label {
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    line-height: 1.3;
+  }
+  .chip1 { top: 4%; left: 2%; animation-delay: 1.6s; animation-name: chipIn, floatChip1; animation-duration: 0.6s, 7s; animation-iteration-count: 1, infinite; animation-timing-function: ease, ease-in-out; }
+  .chip2 { bottom: 8%; right: 0%; animation-delay: 1.9s; animation-name: chipIn, floatChip2; animation-duration: 0.6s, 8s; animation-iteration-count: 1, infinite; animation-timing-function: ease, ease-in-out; }
+  .chip3 { top: 6%; right: 0%; animation-delay: 2.2s; animation-name: chipIn, floatChip3; animation-duration: 0.6s, 6.5s; animation-iteration-count: 1, infinite; animation-timing-function: ease, ease-in-out; }
+  @keyframes chipIn { to { opacity: 1; } }
+  @keyframes floatChip1 { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+  @keyframes floatChip2 { 0%,100% { transform: translateY(0); } 50% { transform: translateY(8px); } }
+  @keyframes floatChip3 { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+
+  .bg-shape {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+  }
 
   .reveal {
     opacity: 0;
@@ -248,6 +367,8 @@ def home():
     .hero { grid-template-columns: 1fr; }
     .steps { grid-template-columns: 1fr; }
     .hero h1 { font-size: 32px; }
+    .preview-wrap { height: 560px; }
+    .fact-chip { max-width: 150px; padding: 9px 12px; }
   }
 </style>
 </head>
@@ -289,16 +410,70 @@ def home():
       </div>
     </div>
 
-    <div class="fade-up d2">
-      <svg class="contour" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
-        <g fill="none" stroke="#2F6E5B" stroke-width="1.2" opacity="0.5">
-          <path d="M60,340 C40,260 90,180 180,160 C270,140 340,190 350,270 C358,340 300,380 220,370 C140,362 80,400 60,340 Z"/>
-          <path d="M90,320 C75,255 115,195 185,180 C255,165 310,205 318,265 C325,320 280,350 215,345 C155,340 105,365 90,320 Z" opacity="0.7"/>
-          <path d="M120,300 C110,250 140,205 190,195 C240,185 280,215 285,260 C290,300 255,325 205,320 C160,316 128,335 120,300 Z" opacity="0.85"/>
-          <path d="M150,280 C145,245 165,215 195,208 C225,201 250,220 253,250 C256,280 235,295 205,292 C177,289 154,303 150,280 Z" opacity="1"/>
+    <div class="preview-wrap fade-up d2">
+      <svg class="bg-shape" viewBox="0 0 400 720" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+        <g fill="none" stroke="#2F6E5B" stroke-width="1.2" opacity="0.35">
+          <path d="M40,600 C20,480 90,360 200,330 C310,300 380,380 360,480 C340,580 260,620 160,610 C80,602 60,650 40,600 Z"/>
+          <path d="M80,560 C65,460 120,370 200,350 C280,330 330,390 315,460 C300,530 240,555 180,545 C130,537 100,585 80,560 Z" opacity="0.7"/>
         </g>
-        <circle cx="200" cy="248" r="4" fill="#A83E32"/>
       </svg>
+
+      <div class="fact-chip chip1">
+        <span class="num">5</span>
+        <span class="label">Live FEMA data sources in every report</span>
+      </div>
+      <div class="fact-chip chip2">
+        <span class="num">50</span>
+        <span class="label">States covered, coast to coast</span>
+      </div>
+      <div class="fact-chip chip3">
+        <span class="num">&lt;1min</span>
+        <span class="label">From address to finished PDF</span>
+      </div>
+
+      <div class="sample-card">
+        <div class="sample-header">GroundTruth</div>
+        <div class="sample-body">
+          <div class="sample-address">412 River Bend Rd, Sample City, FL</div>
+          <span class="sample-badge">High Risk</span>
+
+          <div class="sample-row">
+            <span class="sample-dot" style="background: var(--brick);"></span>
+            <div class="sample-row-inner">
+              <div class="sample-row-label"><span>Flood</span><span>Zone AE</span></div>
+              <div class="sample-bar-track"><div class="sample-bar-fill bar1" style="--fill: 82%;"></div></div>
+            </div>
+          </div>
+          <div class="sample-row">
+            <span class="sample-dot" style="background: var(--ochre);"></span>
+            <div class="sample-row-inner">
+              <div class="sample-row-label"><span>Hurricane</span><span>Relatively High</span></div>
+              <div class="sample-bar-track"><div class="sample-bar-fill bar2" style="--fill: 68%;"></div></div>
+            </div>
+          </div>
+          <div class="sample-row">
+            <span class="sample-dot" style="background: var(--brick);"></span>
+            <div class="sample-row-inner">
+              <div class="sample-row-label"><span>Heat Wave</span><span>Very High</span></div>
+              <div class="sample-bar-track"><div class="sample-bar-fill bar3" style="--fill: 90%;"></div></div>
+            </div>
+          </div>
+          <div class="sample-row">
+            <span class="sample-dot" style="background: var(--teal);"></span>
+            <div class="sample-row-inner">
+              <div class="sample-row-label"><span>Wildfire</span><span>Relatively Low</span></div>
+              <div class="sample-bar-track"><div class="sample-bar-fill bar4" style="--fill: 24%;"></div></div>
+            </div>
+          </div>
+          <div class="sample-row">
+            <span class="sample-dot" style="background: var(--teal);"></span>
+            <div class="sample-row-inner">
+              <div class="sample-row-label"><span>Tornado</span><span>Very Low</span></div>
+              <div class="sample-bar-track"><div class="sample-bar-fill bar5" style="--fill: 12%;"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
